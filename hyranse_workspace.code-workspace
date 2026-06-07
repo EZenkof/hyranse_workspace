@@ -1,0 +1,33 @@
+{
+	"folders": [
+		{
+			"name": "hyranse_workspace",
+			"path": "."
+		},
+		{
+			"name": "hyranse_backend_main",
+			"path": "../hyranse_backend_main"
+		},
+		{
+			"name": "hyranse_frontend_main",
+			"path": "../hyranse_frontend_main"
+		},
+		{
+			"name": "Wordpress test",
+			"path": "../Wordpress test"
+		},
+		{
+			"name": "k8s_argo",
+			"path": "../k8s_argo"
+		},
+		{
+			"name": "Hyranse_email_plugin",
+			"path": "../Hyranse_email_plugin"
+		},
+		{
+			"name": "hyranse_wiki",
+			"path": "../hyranse_wiki"
+		}
+	],
+	"settings": {}
+}
