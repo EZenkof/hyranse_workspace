@@ -410,6 +410,40 @@ spec:
 - `hyranse-backend-postgresql_20260610_020000.sql.gz`
 - `hyranse-email-postgresql_20260603_020000.sql.gz`
 
+## Обновление README проекта
+
+После настройки PostgreSQL для stage/prod необходимо добавить информацию о подключении в `README.md` корня проекта.
+
+### Что добавить
+
+1. **Таблицу с параметрами подключения** для stage (а для prod — только если публичный доступ):
+   - Host (IP кластера или service DNS)
+   - Port (NodePort)
+   - Database name
+   - Username
+2. **Примеры команд** для подключения:
+   - Извне кластера (через NodePort)
+   - Изнутри кластера (через `kubectl exec`)
+3. **Если есть тестовые пользователи** — добавить таблицу с email, паролем и тарифом
+
+### Пример
+
+```markdown
+## Stage Environment
+
+| Resource | URL / Connection |
+|----------|------------------|
+| **PostgreSQL** | Host: `<node-ip>`, Port: `<stage-nodeport>`, DB: `<db_name>`, User: `postgresql` |
+
+### PostgreSQL connection example
+
+```bash
+PGPASSWORD=postgresql psql -h <node-ip> -p <stage-nodeport> -U postgresql -d <db_name>
+```
+```
+
+Пункт добавления информации в README должен быть отмечен в чеклисте ниже.
+
 ## Чего НЕ делать в этом скилле
 
 - Не создавать несколько PostgreSQL в одном namespace (если не нужно)
@@ -431,6 +465,7 @@ spec:
 - [ ] Создан `deploy/postgresql-backup-cronjob.yaml` (только prod, weekly)
 - [ ] Проверено, что Secret `backblaze-credentials` существует в prod namespace
 - [ ] Убедиться, что NodePort не конфликтует с другими сервисами (список занятых портов см. ниже)
+- [ ] Обновлён `README.md` — добавлена информация о подключении к PostgreSQL (host, port, user, db) и команды для подключения
 - [ ] Закоммитить и запушить → проверить ArgoCD (Sync + Healthy)
 
 ### Занятые NodePort для PostgreSQL
