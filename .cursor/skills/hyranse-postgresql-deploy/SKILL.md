@@ -24,6 +24,40 @@ disable-model-invocation: true
 │   └── postgresql-backup-app.yaml     # ArgoCD Application — backup
 ```
 
+## Соглашение об именовании
+
+Все ArgoCD Application и Kubernetes-ресурсы должны следовать единой схеме (см. [hyranse-backend-deploy SKILL.md](../hyranse-backend-deploy/SKILL.md) для полного описания).
+
+### Шаблон
+
+```
+<project>-<component>[-<env>][-<aux>]
+```
+
+| Часть | Описание | Примеры |
+|-------|----------|---------|
+| `project` | Название проекта | `hyranse-email`, `hyranse-backend` |
+| `component` | Узел приложения | `postgresql` |
+| `env` (опционально) | Окружение: пусто = prod, `stage` | пусто, `stage` |
+| `aux` (опционально) | Доп. назначение | `backup`, `backup-prod` |
+
+### Примеры для PostgreSQL
+
+| ArgoCD Application | Назначение |
+|--------------------|-----------|
+| `hyranse-email-postgresql` | PostgreSQL prod |
+| `hyranse-email-postgresql-stage` | PostgreSQL stage |
+| `hyranse-email-postgresql-backup` | Backup CronJob prod (в `k8s_argo`) |
+| `hyranse-email-postgresql-backup-prod` | Backup CronJob prod (в корне проекта) |
+
+### Правила
+
+- **prod** — без суффикса `env`: `hyranse-email-postgresql`, не `hyranse-email-postgresql-prod`
+- **stage** — суффикс `-stage`: `hyranse-email-postgresql-stage`
+- **backup prod** — суффикс `-backup` (или `-backup-prod` если есть backup-stage)
+- **namespace prod** — `hyranse-<project>` (напр. `hyranse-email`)
+- **namespace stage** — `hyranse-stage`
+
 ## Принципы
 
 1. **Helm chart** — обёртка над `bitnami/postgresql` (`oci://registry-1.docker.io/bitnamicharts`). Все настройки через values.

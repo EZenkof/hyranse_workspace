@@ -38,6 +38,41 @@ hyranse_backend_main/
 4. **GHCR** (ghcr.io) — registry для Docker-образов.
 5. **ArgoCD** — GitOps-оператор, синхронизирует Helm chart из репозитория.
 
+## Соглашение об именовании
+
+Все ArgoCD Application и Kubernetes-ресурсы должны следовать единой схеме, чтобы было понятно, какой ресурс к какому проекту и окружению относится.
+
+### Шаблон
+
+```
+<project>-<component>[-<env>][-<aux>]
+```
+
+| Часть | Описание | Примеры |
+|-------|----------|---------|
+| `project` | Название проекта | `hyranse-email`, `hyranse-backend` |
+| `component` | Узел приложения | `backend`, `frontend`, `postgresql` |
+| `env` (опционально) | Окружение: пусто = prod, `stage` | пусто, `stage` |
+| `aux` (опционально) | Доп. назначение | `backup`, `backup-prod` |
+
+### Примеры
+
+| Ресурс | Назначение |
+|--------|-----------|
+| `hyranse-email-backend` | Backend prod |
+| `hyranse-email-backend-stage` | Backend stage |
+| `hyranse-email-postgresql` | PostgreSQL prod |
+| `hyranse-email-postgresql-stage` | PostgreSQL stage |
+| `hyranse-email-backup-prod` | Backup CronJob prod |
+
+### Правила
+
+- **prod** — без суффикса `env` (только `hyranse-email-backend`, не `hyranse-email-backend-prod`)
+- **stage** — суффикс `-stage` (всегда в конце)
+- **namespace** для **prod** — `hyranse-<project>` (напр. `hyranse-email`, `hyranse-backend`)
+- **namespace** для **stage** — `hyranse-stage` (единый для всех stage-сервисов)
+- **Git ветка** `main` → prod, ветка `stage` → stage
+
 ## Этапы настройки CI/CD
 
 ### 1. Создать GitHub Actions workflow
