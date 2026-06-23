@@ -27,6 +27,15 @@
 		{
 			"name": "hyranse_wiki",
 			"path": "../hyranse_wiki"
+		},
+		{
+			"path": "../Hyranse_search_engine"
+		},
+		{
+			"path": "../nodejs_parser_v2"
+		},
+		{
+			"path": "../linkedin_account_creator"
 		}
 	],
 	"settings": {}
