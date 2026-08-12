@@ -1,6 +1,7 @@
 # Helm Chart — шаблоны
 
-> Замените `<app-name>`, `<repo-owner>`, `<db-name>` на свои значения.
+> Замените `<app-name>`, `<repo-owner>`, `<repo-name>`, `<db-name>` на свои значения.
+> Референс: `hyranse_backend_main/deploy/chart/`.
 
 ## `deploy/chart/Chart.yaml`
 
@@ -15,7 +16,7 @@ appVersion: "1.0"
 
 ## `deploy/chart/values.yaml`
 
-Общие/дефолтные значения. Переопределяются в `values-stage.yaml` и `values-prod.yaml`.
+Общие значения. Переопределяются в `values-stage.yaml` и `values-prod.yaml`.
 
 ```yaml
 replicaCount: 1
@@ -41,20 +42,20 @@ ingress:
   host: ""
   path: /
   pathType: Prefix
-  rewriteTarget: ""
-  serviceName: ""
-  servicePort: 80
-  annotations: {}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
   tls:
     enabled: false
     secretName: ""
 
 resources:
   requests:
-    cpu: 100m
+    cpu: 500m
     memory: 512Mi
   limits:
-    cpu: "1"
+    cpu: "2"
     memory: 1Gi
 
 probes:
@@ -63,20 +64,20 @@ probes:
     path: /ready
     initialDelaySeconds: 5
     periodSeconds: 5
-    timeoutSeconds: 3
-    failureThreshold: 36
-  liveness:
-    enabled: true
-    path: /healthz
-    initialDelaySeconds: 15
-    periodSeconds: 60
     timeoutSeconds: 5
-    failureThreshold: 3
+    failureThreshold: 36
   readiness:
     enabled: true
     path: /ready
     initialDelaySeconds: 5
     periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  liveness:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 15
+    periodSeconds: 60
     timeoutSeconds: 5
     failureThreshold: 3
 
@@ -88,53 +89,106 @@ env:
   dbUsername: postgresql
   dbName: <db-name>
   opensearchUrl: ""
-  opensearchIndex: <opensearch-index>
+  opensearchIndex: ""
   contactsApiUrl: ""
+  jwtSecret: ""
+  xApiKey: ""
+  googleClientId: ""
+  frontendUrl: ""
+  frontendUrls: ""
+  landingUrls: ""
+  backendUrl: ""
+  aiSearchUrl: ""
+  brevoApiKey: ""
+  mailSender: ""
+  responseSecret: ""
+  responseSalt: ""
+  serviceType: KUBERNETES
+  telegramBotToken: ""
+  sentryDsn: ""
+  sentryEnvironment: ""
+  linkedinParserDbHost: ""
+  linkedinParserDbPort: "5432"
+  linkedinParserDbUsername: postgresql
+  linkedinParserDbName: linkedin_db
+  linkedinParserDbPassword: ""
 
 dbPasswordSecret:
   name: <app-name>-postgresql
   key: password
 
+opensearchUrlSecret:
+  enabled: false
+  name: opensearch-credentials
+  key: internal-url
+
 appSecret:
   enabled: true
   name: <app-name>-app-secret
   optional: true
+
+linkedinParserDbPasswordSecret:
+  enabled: false
+  name: hyranse-parser-postgresql
+  key: password
 ```
+
+> **opensearchUrlSecret**: если `enabled: true`, `CANDIDATE_OPENSEARCH_URL` берётся из Secret. Нельзя одновременно задавать literal в `env.opensearchUrl` — k8s отклонит Deployment.
 
 ## `deploy/chart/values-stage.yaml`
 
 ```yaml
 appName: <app-name>-stage
 
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
 service:
   type: NodePort
   nodePort: 30091
 
-ingress:
-  enabled: true
-  host: <stage-domain>             # например, backend-stage.hyranse.com
-  path: /
-  pathType: Prefix
-  rewriteTarget: ""
-  serviceName: <app-name>-stage
-  servicePort: 80
-  annotations: {}
-  tls:
-    enabled: false
-
 env:
   dbHost: <db-host>
-  opensearchUrl: <opensearch-url>
+  opensearchIndex: <opensearch-index>
   contactsApiUrl: <contacts-api-url>
+  backendUrl: <backend-url>
+  frontendUrl: <frontend-url>
+  frontendUrls: <frontend-urls>
+  landingUrls: <landing-urls>
+  aiSearchUrl: <ai-search-url>
+  sentryEnvironment: stage
+
+opensearchUrlSecret:
+  enabled: true
+  name: opensearch-credentials-prod
+  key: internal-url
+
+appSecret:
+  enabled: false
 
 image:
   tag: latest
 ```
 
+Stage по умолчанию **без Ingress** (наследует `ingress.enabled: false`). Доступ через NodePort.
+
 ## `deploy/chart/values-prod.yaml`
 
 ```yaml
 appName: <app-name>
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
 
 service:
   type: NodePort
@@ -142,33 +196,38 @@ service:
 
 ingress:
   enabled: true
-  host: <prod-domain>              # например, backend.hyranse.com
-  path: /
-  pathType: Prefix
-  rewriteTarget: ""
-  serviceName: <app-name>
-  servicePort: 80
+  host: <prod-domain>
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod   # опционально
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
   tls:
-    enabled: true                  # true если есть cert-manager
+    enabled: true
     secretName: <domain>-tls
 
 env:
   dbHost: <db-host>
-  opensearchUrl: <opensearch-url>
+  opensearchIndex: <opensearch-index>
   contactsApiUrl: <contacts-api-url>
+  backendUrl: <backend-url>
+  frontendUrl: <frontend-url>
+  frontendUrls: <frontend-urls>
+  landingUrls: <landing-urls>
+  aiSearchUrl: <ai-search-url>
+  sentryEnvironment: production
 
-image:
-  tag: latest
-```
+opensearchUrlSecret:
+  enabled: true
+  name: opensearch-credentials-prod
+  key: internal-url
 
-env:
-  dbHost: <db-host>
-  opensearchUrl: <opensearch-url>
-  contactsApiUrl: <contacts-api-url>
+appSecret:
+  enabled: true
+  name: <app-name>-app-secret
+  optional: true
 
 image:
   tag: latest
@@ -176,105 +235,36 @@ image:
 
 ## `deploy/chart/templates/deployment.yaml`
 
+Полный шаблон — копировать из `hyranse_backend_main/deploy/chart/templates/deployment.yaml`.
+
+Ключевые блоки:
+
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ .Values.appName }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  revisionHistoryLimit: 3
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-  selector:
-    matchLabels:
-      app: {{ .Values.appName }}
-  template:
-    metadata:
-      labels:
-        app: {{ .Values.appName }}
-    spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      containers:
-        - name: {{ .Values.appName }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - containerPort: {{ .Values.service.targetPort }}
-          env:
-            - name: PORT
-              value: {{ .Values.env.port | quote }}
-            - name: ENVIRONMENT
-              value: {{ .Values.env.environment | quote }}
-            - name: DB_HOST
-              value: {{ .Values.env.dbHost | quote }}
-            - name: DB_PORT
-              value: {{ .Values.env.dbPort | quote }}
-            - name: DB_USERNAME
-              value: {{ .Values.env.dbUsername | quote }}
-            - name: DB_NAME
-              value: {{ .Values.env.dbName | quote }}
-            - name: DB_PASSWORD
+            - name: CANDIDATE_OPENSEARCH_URL
+              {{- if .Values.opensearchUrlSecret.enabled }}
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.dbPasswordSecret.name }}
-                  key: {{ .Values.dbPasswordSecret.key }}
-            {{ if .Values.env.opensearchUrl }}
-            - name: CANDIDATE_OPENSEARCH_URL
+                  name: {{ .Values.opensearchUrlSecret.name }}
+                  key: {{ .Values.opensearchUrlSecret.key }}
+              {{- else }}
               value: {{ .Values.env.opensearchUrl | quote }}
-            - name: CANDIDATE_OPENSEARCH_INDEX
-              value: {{ .Values.env.opensearchIndex | quote }}
-            {{ end }}
-            {{ if .Values.env.contactsApiUrl }}
-            - name: CONTACTS_API_URL
-              value: {{ .Values.env.contactsApiUrl | quote }}
-            {{ end }}
-          {{- if .Values.appSecret.enabled }}
-          envFrom:
-            - secretRef:
-                name: {{ .Values.appSecret.name }}
-                optional: {{ .Values.appSecret.optional }}
-          {{- end }}
-          {{- if .Values.probes.startup.enabled }}
-          startupProbe:
-            httpGet:
-              path: {{ .Values.probes.startup.path }}
-              port: {{ .Values.service.targetPort }}
-            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
-          {{- end }}
-          {{- if .Values.probes.liveness.enabled }}
-          livenessProbe:
-            httpGet:
-              path: {{ .Values.probes.liveness.path }}
-              port: {{ .Values.service.targetPort }}
-            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
-          {{- end }}
-          {{- if .Values.probes.readiness.enabled }}
-          readinessProbe:
-            httpGet:
-              path: {{ .Values.probes.readiness.path }}
-              port: {{ .Values.service.targetPort }}
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
-          {{- end }}
-          {{- with .Values.resources }}
-          resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+              {{- end }}
 ```
+
+```yaml
+            {{- if .Values.linkedinParserDbPasswordSecret.enabled }}
+            - name: LINKEDIN_PARSER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.linkedinParserDbPasswordSecret.name }}
+                  key: {{ .Values.linkedinParserDbPasswordSecret.key }}
+            {{- else if .Values.env.linkedinParserDbPassword }}
+            - name: LINKEDIN_PARSER_DB_PASSWORD
+              value: {{ .Values.env.linkedinParserDbPassword | quote }}
+            {{- end }}
+```
+
+Probes (startup → readiness → liveness) — conditional-блоки из `values.probes.*`.
 
 ## `deploy/chart/templates/service.yaml`
 
@@ -305,9 +295,6 @@ kind: Ingress
 metadata:
   name: {{ .Values.appName }}
   annotations:
-    {{- if .Values.ingress.rewriteTarget }}
-    nginx.ingress.kubernetes.io/rewrite-target: {{ .Values.ingress.rewriteTarget | quote }}
-    {{- end }}
     {{- range $key, $value := .Values.ingress.annotations }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
@@ -327,8 +314,10 @@ spec:
             pathType: {{ .Values.ingress.pathType }}
             backend:
               service:
-                name: {{ .Values.ingress.serviceName }}
+                name: {{ .Values.appName }}
                 port:
-                  number: {{ .Values.ingress.servicePort }}
+                  number: {{ .Values.service.port }}
 {{- end }}
 ```
+
+Ingress указывает на `{{ .Values.appName }}` напрямую, без отдельных `serviceName` / `servicePort` в values.

@@ -1,6 +1,8 @@
 # ArgoCD Application — шаблоны
 
-> Замените `<repo-url>`, `<app-name>`, `<namespace>` на свои значения.
+> Замените `<repo-url>`, `<app-name>`, `<prod-branch>`, `<stage-branch>`, namespace'ы.
+
+ArgoCD читает chart из **веток `prod` и `stage`**, не из default branch. CI коммитит image tag в values на соответствующую ветку, ArgoCD подхватывает изменения.
 
 ## `deploy/application.yaml` (prod)
 
@@ -16,7 +18,7 @@ spec:
   project: default
   source:
     repoURL: <repo-url>
-    targetRevision: HEAD
+    targetRevision: prod
     path: deploy/chart
     helm:
       valueFiles:
@@ -46,7 +48,7 @@ spec:
   project: default
   source:
     repoURL: <repo-url>
-    targetRevision: HEAD
+    targetRevision: stage
     path: deploy/chart
     helm:
       valueFiles:
@@ -61,3 +63,12 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ```
+
+## Пример для hyranse_backend_main
+
+| Поле | prod | stage |
+|------|------|-------|
+| `metadata.name` | `hyranse-backend` | `hyranse-backend-stage` |
+| `targetRevision` | `prod` | `stage` |
+| `destination.namespace` | `hyranse-backend` | `hyranse-stage` |
+| `repoURL` | `https://github.com/EZenkof/hyranse_backend_main.git` | тот же |

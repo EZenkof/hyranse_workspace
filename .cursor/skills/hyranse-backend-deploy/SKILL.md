@@ -14,35 +14,57 @@ disable-model-invocation: true
 hyranse_backend_main/
 ├── .github/workflows/
 │   ├── ci-docker-publish.yml    # сборка по git-тегам (v*.*.*)
-│   └── docker-ghcr.yml          # сборка + деплой по пушам в main
+│   ├── docker-ghcr.yml          # prod: тесты → сборка → деплой (ветка prod)
+│   └── docker-stage.yml         # stage: тесты → сборка → деплой (ветка stage)
 ├── deploy/
 │   ├── application.yaml         # ArgoCD Application — prod
 │   ├── application-stage.yaml   # ArgoCD Application — stage
-│   └── chart/                   # Helm chart
-│       ├── Chart.yaml           # имя chart, версия
-│       ├── values.yaml          # общие/дефолтные значения
-│       ├── values-stage.yaml    # overrides для stage
-│       ├── values-prod.yaml     # overrides для prod
+│   ├── postgresql-application.yaml
+│   ├── postgresql-application-stage.yaml
+│   ├── postgresql-chart/
+│   ├── postgresql-backup-app.yaml
+│   ├── postgresql-backup-cronjob.yaml
+│   ├── opensearch-credentials-prod-secret.yaml
+│   ├── opensearch-credentials-prod-secret-backend.yaml
+│   └── chart/                   # Helm chart приложения
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       ├── values-stage.yaml
+│       ├── values-prod.yaml
 │       └── templates/
-│           ├── deployment.yaml  # Deployment + env, probes, resources
-│           ├── service.yaml     # ClusterIP / NodePort
-│           └── ingress.yaml     # Ingress (conditional, по enabled)
+│           ├── deployment.yaml
+│           ├── service.yaml
+│           └── ingress.yaml
 └── Dockerfile
 ```
 
+## Flow деплоя
+
+```
+push в prod/stage
+  → GitHub Actions (тесты, docker build, push GHCR)
+  → sed image.tag в values-prod.yaml / values-stage.yaml
+  → commit + push в ту же ветку
+  → curl ArgoCD sync API
+  → ArgoCD подтягивает chart из ветки prod/stage
+```
+
+| Окружение | Git-ветка | Workflow | ArgoCD app | values file | Image tags |
+|-----------|-----------|----------|------------|-------------|------------|
+| prod | `prod` | `docker-ghcr.yml` | `hyranse-backend` | `values-prod.yaml` | `latest`, `<sha>` |
+| stage | `stage` | `docker-stage.yml` | `hyranse-backend-stage` | `values-stage.yaml` | `stage-latest`, `stage-<sha>` |
+
+Tag в Helm values: prod — `<sha>`, stage — `stage-<sha>`.
+
 ## Принципы
 
-1. **GitHub Actions** — CI/CD (сборка образа, прогон тестов, пуш в GHCR, обновление Helm values, триггер ArgoCD sync).
-2. **Helm chart** — шаблоны Kubernetes (Deployment, Service, Ingress). Все env-переменные через values.
-3. **Две ветки/окружения**: `stage` (ручная синхронизация ArgoCD) и `main` → prod (автоматический деплой).
+1. **GitHub Actions** — CI/CD (тесты, сборка образа, пуш в GHCR, обновление Helm values, триггер ArgoCD sync).
+2. **Helm chart** — шаблоны Kubernetes (Deployment, Service, Ingress). Env-переменные через values.
+3. **Две ветки**: `stage` и `prod`. Каждая ветка — отдельный pipeline и ArgoCD Application.
 4. **GHCR** (ghcr.io) — registry для Docker-образов.
-5. **ArgoCD** — GitOps-оператор, синхронизирует Helm chart из репозитория.
+5. **ArgoCD** — GitOps, `targetRevision` = имя ветки (`prod` / `stage`), не HEAD.
 
 ## Соглашение об именовании
-
-Все ArgoCD Application и Kubernetes-ресурсы должны следовать единой схеме, чтобы было понятно, какой ресурс к какому проекту и окружению относится.
-
-### Шаблон
 
 ```
 <project>-<component>[-<env>][-<aux>]
@@ -55,286 +77,165 @@ hyranse_backend_main/
 | `env` (опционально) | Окружение: пусто = prod, `stage` | пусто, `stage` |
 | `aux` (опционально) | Доп. назначение | `backup`, `backup-prod` |
 
-### Примеры
-
 | Ресурс | Назначение |
 |--------|-----------|
-| `hyranse-email-backend` | Backend prod |
-| `hyranse-email-backend-stage` | Backend stage |
-| `hyranse-email-postgresql` | PostgreSQL prod |
-| `hyranse-email-postgresql-stage` | PostgreSQL stage |
-| `hyranse-email-backup-prod` | Backup CronJob prod |
+| `hyranse-backend` | Backend prod |
+| `hyranse-backend-stage` | Backend stage |
+| `hyranse-backend-postgresql` | PostgreSQL prod |
+| `hyranse-backend-postgresql-stage` | PostgreSQL stage |
 
 ### Правила
 
-- **prod** — без суффикса `env` (только `hyranse-email-backend`, не `hyranse-email-backend-prod`)
+- **prod** — без суффикса `env`
 - **stage** — суффикс `-stage` (всегда в конце)
-- **namespace** для **prod** — `hyranse-<project>` (напр. `hyranse-email`, `hyranse-backend`)
-- **namespace** для **stage** — `hyranse-stage` (единый для всех stage-сервисов)
-- **Git ветка** `main` → prod, ветка `stage` → stage
+- **namespace prod** — `hyranse-<project>` (напр. `hyranse-backend`)
+- **namespace stage** — `hyranse-stage` (единый для всех stage-сервисов)
+- **Git-ветка** `prod` → prod, `stage` → stage
 
 ## Этапы настройки CI/CD
 
-### 1. Создать GitHub Actions workflow
+### 1. Создать GitHub Actions workflows
 
-Два файла:
+Три файла:
 
-- **`ci-docker-publish.yml`** — сборка образа при создании git-тега `v*.*.*`. Тегирует `latest`, `v<version>` и `sha-<commit>`.
-- **`docker-ghcr.yml`** — полный пайплайн: тесты → сборка → пуш в GHCR → обновление `values-prod.yaml` → коммит → ArgoCD sync.
+- **`ci-docker-publish.yml`** — сборка образа при git-теге `v*.*.*`. Теги: `latest`, `v<version>`, `sha-<commit>`.
+- **`docker-ghcr.yml`** — prod pipeline при пуше в `prod`.
+- **`docker-stage.yml`** — stage pipeline при пуше в `stage`.
 
-Подробные шаблоны см. в [reference-github-actions.md](reference-github-actions.md).
+Шаблоны: [reference-github-actions.md](reference-github-actions.md).
 
 ### 2. Создать Helm chart
 
-Шаблоны — в [reference-helm-chart.md](reference-helm-chart.md).
+Шаблоны: [reference-helm-chart.md](reference-helm-chart.md).
+
+Ключевые особенности:
+- `opensearchUrlSecret` — URL OpenSearch из K8s Secret (нельзя одновременно literal в env и secret)
+- `linkedinParserDbPasswordSecret` — пароль parser DB из Secret (опционально)
+- Ingress в prod, NodePort в stage (по умолчанию)
 
 ### 3. Создать ветки stage и prod
 
-- **`stage`** — ArgoCD Application `hyranse-backend-stage` использует `values-stage.yaml`. Синхронизация вручную или по расписанию.
-- **`main`** → **prod** — ArgoCD Application `hyranse-backend` использует `values-prod.yaml`. Workflow `docker-ghcr.yml` сам обновляет `tag` в `values-prod.yaml` и коммитит.
+- **`stage`** — ArgoCD `hyranse-backend-stage`, `values-stage.yaml`, `targetRevision: stage`
+- **`prod`** — ArgoCD `hyranse-backend`, `values-prod.yaml`, `targetRevision: prod`
 
 ### 4. Создать ArgoCD Application-манифесты
 
 ```
-deploy/application.yaml        # prod
-deploy/application-stage.yaml  # stage
+deploy/application.yaml        # prod, targetRevision: prod
+deploy/application-stage.yaml  # stage, targetRevision: stage
 ```
 
-Указывают:
-- `source.repoURL` — репозиторий
-- `source.targetRevision` — HEAD (или имя ветки)
-- `source.path` — `deploy/chart`
-- `source.helm.valueFiles` — соответствующий `values-*.yaml`
-- `destination.namespace` — `hyranse-backend` или `hyranse-stage`
+Шаблоны: [reference-argo.md](reference-argo.md).
+
+### 5. Связанная инфраструктура (не генерировать в скилле, но должна существовать)
+
+Для `hyranse_backend_main` в `deploy/` уже есть отдельные Application:
+- PostgreSQL (`postgresql-application*.yaml`, `postgresql-chart/`)
+- Backup CronJob (`postgresql-backup-*.yaml`)
+- OpenSearch credentials (`opensearch-credentials-*.yaml`)
+
+Скилл не создаёт эти ресурсы, но приложение от них зависит.
 
 ## Настройка Ingress (опционально)
 
-Ingress настраивается через **поддомены** — каждое окружение на своём поддомене.
+Разделять **Ingress host в chart** и **публичный backend URL** (`env.backendUrl`).
 
-| Окружение | Поддомен | Namespace |
-|-----------|----------|-----------|
-| prod  | `backend.<domain>` | `hyranse-backend` |
-| stage | `backend-stage.<domain>` | `hyranse-stage` |
+| Окружение | Ingress в chart | Доступ | Namespace |
+|-----------|-----------------|--------|-----------|
+| prod | `backend.hyranse.com` (enabled) | Ingress + TLS | `hyranse-backend` |
+| stage | disabled (наследует `values.yaml`) | NodePort `30091` | `hyranse-stage` |
+
+Публичные URL приложения (через внешний API gateway):
+- prod: `https://api.hyranse.com/backend-main`
+- stage: `https://stage-api.hyranse.com/backend-main`
 
 При активации скилла агент запрашивает:
 
-- **Включить Ingress?** (Y/n) — если нет, сервисы доступны только по NodePort
-- **Домен для prod** (host): по умолчанию `backend.hyranse.com`
-- **Домен для stage** (host): по умолчанию `backend-stage.hyranse.com`
-- **Включить TLS через cert-manager?** (Y/n)
-- **Имя TLS-секрета**: если да — заполнить
+- **Включить Ingress для prod?** (Y/n)
+- **Домен prod** (host): по умолчанию `backend.hyranse.com`
+- **Включить Ingress для stage?** (y/N) — по умолчанию нет, NodePort
+- **Включить TLS через cert-manager?** (Y/n) — только для prod Ingress
+- **Имя TLS-секрета**
 
-Stage и prod могут иметь независимые настройки TLS.
+## Health checks и Probes
 
-### Как это работает
+### Эндпоинты
 
-```yaml
-# prod: backend.hyranse.com → hyranse-backend
-# stage: backend-stage.hyranse.com → hyranse-backend-stage
-```
+| Probe | Path | Назначение |
+|-------|------|------------|
+| startup | `/ready` | Полный старт (БД, зависимости) |
+| liveness | `/healthz` | Процесс жив, без внешних зависимостей |
+| readiness | `/ready` | Готов принимать трафик (PostgreSQL, OpenSearch, Redis и др.) |
 
-Каждый Ingress живёт в своём namespace и указывает на свой сервис. nginx не нужно мержить правила, `rewrite-target` не требуется.
+Референс: `Hyranse_email_plugin/backend/src/health/`.
 
-## Health checks и Probes (Kubernetes)
-
-Для каждого приложения настраиваются 3 типа probe.
-
-### 1. Startup probe
-
-Определяет, что приложение полностью запустилось (БД подключена, зависимости готовы). Пока startup не пройдёт — liveness и readiness отключены.
-
-Путь в приложении: `GET /ready` (тот же, что readiness)
-
-### 2. Liveness probe
-
-Проверяет, что процесс жив. Должен быть лёгким и быстрым — без проверки внешних зависимостей.
-
-Путь в приложении: `GET /healthz`
-
-Пример ответа:
-```json
-{ "status": "ok" }
-```
-
-### 3. Readiness probe
-
-Проверяет, что сервис готов принимать трафик. **Должен проверять все связанные ресурсы:**
-- PostgreSQL (SELECT 1)
-- OpenSearch (ping кластера)
-- Redis (если используется)
-- Другие API (contactsApiUrl)
-
-Если хотя бы одна зависимость недоступна — readiness возвращает 503.
-
-Путь в приложении: `GET /ready`
-
-Пример ответа при успехе:
-```json
-{
-  "status": "ok",
-  "checks": {
-    "postgresql": "ok",
-    "opensearch": "ok"
-  }
-}
-```
-
-Пример ответа при ошибке:
-```json
-{
-  "status": "error",
-  "message": "postgresql unavailable"
-}
-```
-
-### Реализация в бекенде
-
-Probes должны быть вынесены в **отдельный модуль** `src/health/`:
+Модуль в приложении:
 
 ```
 src/health/
-├── health.module.ts      # регистрация модуля
-├── health.controller.ts  # эндпоинты /healthz и /ready
-└── health.service.ts     # проверка зависимостей
+├── health.module.ts
+├── health.controller.ts
+└── health.service.ts
 ```
-
-Референс: `Hyranse_email_plugin/backend/src/health/` — актуальная реализация.
-
-### Настройка в Helm chart
-
-Шаблон `deploy/chart/templates/deployment.yaml` включает conditional-блоки для всех трёх probe (см. [reference-helm-chart.md](reference-helm-chart.md)).
 
 ### Значения по умолчанию
 
 | Probe | Path | initialDelaySeconds | periodSeconds | timeoutSeconds | failureThreshold |
 |-------|------|---------------------|---------------|----------------|-----------------|
-| startup | `/ready` | 5 | 5 | 3 | 36 |
+| startup | `/ready` | 5 | 5 | 5 | 36 |
 | liveness | `/healthz` | 15 | 60 | 5 | 3 |
 | readiness | `/ready` | 5 | 10 | 5 | 3 |
 
 ## Prometheus monitoring
 
-### Архитектура
+Источник истины: `k8s_argo/observability/prometeus/`. Перед добавлением — проверить, нет ли уже job/alert для сервиса.
 
-```
-Blackbox Exporter  ──scrape──>  /healthz (внешний probe)
-       │
-       ▼
-   Prometheus
-       │
-       ├── kube-state-metrics ──> метрики pod (restarts, ready)
-       ├── blackbox ──> probe_success
-       └── Alertmanager ──> Telegram
-```
-
-### Blackbox exporter
-
-Устанавливается отдельно в namespace `monitoring`. Шаблон: [reference-prometheus.md](reference-prometheus.md).
-
-### Scrape config (extraScrapeConfigs)
-
-Для каждого сервиса добавляется job blackbox:
-
-```yaml
-- job_name: blackbox-<service-name>
-  scrape_interval: 1m
-  scrape_timeout: 15s
-  metrics_path: /probe
-  params:
-    module: [http_2xx]
-  static_configs:
-    - targets:
-        - http://<service>.<namespace>.svc.cluster.local/healthz
-  relabel_configs:
-    - source_labels: [__address__]
-      target_label: __param_target
-    - source_labels: [__param_target]
-      target_label: instance
-    - target_label: __address__
-      replacement: prometheus-blackbox-exporter.monitoring.svc.cluster.local:9115
-```
-
-### Alerting rules
-
-Для каждого сервиса добавляются правила (в `alerting_rules.yml`):
-
-```yaml
-- name: <service-name>-health
-  rules:
-    - alert: <ServiceName>NotReady
-      expr: |
-        kube_pod_container_status_ready{
-          namespace="<namespace>",
-          pod=~"<pod-prefix>-.*"
-        } == 0
-      for: 2m
-      labels:
-        severity: critical
-        service: <service-name>
-      annotations:
-        summary: "🚨 Readiness: {{ $labels.pod }}"
-        description: "Контейнер {{ $labels.container }} не готов >2min"
-
-    - alert: <ServiceName>HealthFail
-      expr: |
-        probe_success{
-          job="blackbox-<service-name>",
-          instance=~".*<service>\\.<namespace>\\.svc\\.cluster\\.local/"
-        } == 0
-      for: 1m
-      labels:
-        severity: critical
-        service: <service-name>
-      annotations:
-        summary: "❌ Backend health probe: {{ $labels.instance }}"
-        description: "HTTP не 200 или таймаут, раз в минуту scrape"
-```
-
-Правила для stage отдельные (c namespace `hyranse-stage`), для prod — `hyranse-backend`.
-
-### Prometheus values
-
-Prometheus устанавливается через Helm-чарт (repo: prometheus-community), с `kubeStateMetrics.enabled: true` для получения метрик pod. Полный шаблон: [reference-prometheus.md](reference-prometheus.md).
+Шаблоны: [reference-prometheus.md](reference-prometheus.md).
 
 ## Чего НЕ делать в этом скилле
 
-- Не создавать PostgreSQL, OpenSearch, Redis и другие внешние ресурсы
+- Не создавать PostgreSQL, OpenSearch, Redis (но для backend_main манифесты уже в `deploy/`)
 - Не настраивать cert-manager, ingress-nginx, сам ArgoCD
 - Не создавать секреты в Kubernetes
-- Не писать бизнес-логику приложения (health-модуль `src/health/` — исключение, он часть деплоя)
+- Не коммитить реальные токены, пароли, API keys
+- Не писать бизнес-логику (health-модуль `src/health/` — исключение)
 
-## Чеклист при настройке CI/CD
+## Чеклист
 
-- [ ] Создан Dockerfile в корне проекта
-- [ ] Создан health-модуль (`src/health/`) с эндпоинтами `/healthz` и `/ready`
-- [ ] `/ready` проверяет PostgreSQL, OpenSearch и другие зависимости
-- [ ] Созданы GitHub Actions workflows (сборка + деплой)
-- [ ] Создан Helm chart (Chart.yaml + templates)
-- [ ] В `deployment.yaml` настроены startup, liveness и readiness probes
-- [ ] Настроены values-stage.yaml и values-prod.yaml
-- [ ] Созданы ArgoCD Application манифесты для stage и prod
-- [ ] Созданы ветки stage и main (prod)
-- [ ] Настроены secrets в GitHub: `GITHUB_TOKEN` (авто), `ARGOCD_TOKEN`, `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` (опционально)
-- [ ] Настроены variables в GitHub: `ARGOCD_BASE_URL` (опционально)
-- [ ] Убедиться, что `imagePullSecrets` (ghcr-cred) существует в namespace'ах
-- [ ] Если нужен Ingress: указаны домены для stage и prod, решено про TLS
-- [ ] Prometheus: добавлен blackbox scrape config и alerting rules для сервиса
-- [ ] Prometheus: настроены отдельные alerting rules для stage и prod
+- [ ] Dockerfile в корне проекта
+- [ ] Health-модуль (`src/health/`) с `/healthz` и `/ready`
+- [ ] Workflows: `ci-docker-publish.yml`, `docker-ghcr.yml`, `docker-stage.yml`
+- [ ] Helm chart с probes, `opensearchUrlSecret`, env-переменными
+- [ ] `values-stage.yaml` и `values-prod.yaml`
+- [ ] ArgoCD Applications с `targetRevision: stage` / `prod`
+- [ ] Ветки `stage` и `prod` в репозитории
+- [ ] GitHub Secrets: `ARGOCD_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (опционально)
+- [ ] GitHub Variables: `ARGOCD_BASE_URL`
+- [ ] `imagePullSecrets` (ghcr-cred) в namespace'ах
+- [ ] Prometheus blackbox job и alerting rules (если нужен мониторинг)
 
-## Текущие параметры подключения к ArgoCD
+## Параметры ArgoCD (GitHub)
 
-Эти значения должны быть установлены как secrets/variables в GitHub Repository.
+| Параметр | Где задать |
+|----------|------------|
+| `ARGOCD_BASE_URL` | GitHub Repository Variables |
+| `ARGOCD_TOKEN` | GitHub Repository Secrets |
 
-| Параметр | Значение |
-|----------|----------|
-| `ARGOCD_BASE_URL` (vars) | `https://159.195.72.151:30000` |
-| `ARGOCD_TOKEN` (secrets) | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcmdvY2QiLCJzdWIiOiJhZG1pbjphcGlLZXkiLCJuYmYiOjE3ODEwOTEyNTEsImlhdCI6MTc4MTA5MTI1MSwianRpIjoiNGJkZTI4ODQtNzMxMC00OTBiLWI5YTItMzJkNTUyMjRiYWY3In0.VeHqNSvm7agk8V0sy1shYOL38vwcpcjvQTfbAGjJNrg` |
+Не коммитить значения в репозиторий.
 
-> **Важно**: Токен долгоживущий (без срока действия). Хранить в GitHub Secrets, не коммитить в репозиторий.
+## Референсные значения для hyranse_backend_main
+
+| Параметр | prod | stage |
+|----------|------|-------|
+| ArgoCD app | `hyranse-backend` | `hyranse-backend-stage` |
+| Namespace | `hyranse-backend` | `hyranse-stage` |
+| NodePort | `30081` | `30091` |
+| Ingress host | `backend.hyranse.com` | disabled |
+| GHCR image | `ghcr.io/ezenkof/hyranse_backend_main` | тот же |
 
 ## Полные шаблоны
 
 - GitHub Actions: [reference-github-actions.md](reference-github-actions.md)
-- Helm Chart (values + templates): [reference-helm-chart.md](reference-helm-chart.md)
-- ArgoCD Application манифесты: [reference-argo.md](reference-argo.md)
+- Helm Chart: [reference-helm-chart.md](reference-helm-chart.md)
+- ArgoCD Application: [reference-argo.md](reference-argo.md)
 - Prometheus + Blackbox: [reference-prometheus.md](reference-prometheus.md)

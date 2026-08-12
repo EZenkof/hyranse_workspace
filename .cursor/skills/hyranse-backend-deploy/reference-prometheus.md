@@ -1,6 +1,8 @@
 # Prometheus + Blackbox — шаблоны
 
-Источник истины в проекте: `k8s_argo/observability/prometeus/`.
+Источник истины: `k8s_argo/observability/prometeus/`.
+
+Перед добавлением job или alerting rules — проверить, нет ли уже конфигурации для сервиса в `k8s_argo/observability/prometeus/prometheus.yaml`.
 
 ## Blackbox exporter
 
