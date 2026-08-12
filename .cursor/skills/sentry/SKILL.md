@@ -71,6 +71,10 @@ Backend и frontend — разные DSN/projects. Карта projects: [referen
 
 ## Фильтрация шума
 
+Shared config (host): `src/observability/sentry-filters.ts` — `SKIPPED_HTTP_STATUSES`, `SKIPPED_ERROR_MESSAGES`, `shouldCaptureHttpStatus`, `shouldCaptureErrorMessage`.
+
+Host interceptor (`error-response.interceptor.ts`) и `sentry.ts` `beforeSend` используют этот модуль. MFE capture helpers дублируют `skippedStatuses` локально (отдельный repo).
+
 ### Игнорировать
 
 | Категория | Примеры |
@@ -154,6 +158,52 @@ npx sentry-cli releases list --org hyranse-go
 | Project на stage/prod | `environment`, не project |
 | Project на каждый MFE | tag `microfrontend` в `javascript-react` |
 | Один mega backend project | отдельный project per deployable backend |
+| Расширять `ignoreErrors` без покрытия | ErrorBoundary + capture helpers + status skip |
+
+## Frontend coverage (host + MFE)
+
+Улучшать **покрытие**, не раздувать ignore list.
+
+### Host (`hyranse_frontend_main`)
+
+| Механика | Файл | Статус |
+|----------|------|--------|
+| `Sentry.init` | `src/sentry.ts` | ✅ |
+| Global `ErrorBoundary` | `src/index.tsx` | ✅ |
+| Axios interceptor → Sentry | `src/interceptors/error-response.interceptor.ts` | ✅ skip 401/403/404 + messages |
+| Shared filters | `src/observability/sentry-filters.ts` | ✅ |
+| MFE `ErrorBoundary` billing | `billing-remote.page.tsx` | ✅ |
+| MFE `ErrorBoundary` ai-search | `ai-search-remote.page.tsx` | ✅ |
+| MFE `ErrorBoundary` cv-editor | `cv-editor-remote.page.tsx` | ✅ |
+| MFE `ErrorBoundary` api-portal | `api-portal-remote.page.tsx` | ✅ |
+
+Interceptor: Telegram/toast по-прежнему для большинства ошибок; **Sentry** только если `shouldCaptureHttpStatus` + `shouldCaptureErrorMessage`.
+
+### MFE capture helpers
+
+Паттерн: `frontend/src/observability/sentry.ts` — `captureXError`, проверка `Sentry.getClient()`, skip 401/403/404, tag `microfrontend`.
+
+| MFE | Helper | API layer |
+|-----|--------|-----------|
+| billing | `captureBillingError` | `billing.service.ts` |
+| ai-search | `captureAiSearchError` | `api-client.ts` |
+| cv-editor | `captureCvEditorError` | `cv.service.ts` |
+| api-portal | `captureApiPortalError` | `public-api.service.ts` |
+
+MFE **не** вызывают `Sentry.init` — только capture через client host app.
+
+### ErrorBoundary на host
+
+```tsx
+<Sentry.ErrorBoundary
+  fallback={<div>… temporarily unavailable…</div>}
+  beforeCapture={(scope) => scope.setTag('microfrontend', 'cvEditor')}
+>
+  <Suspense>…</Suspense>
+</Sentry.ErrorBoundary>
+```
+
+Ловит React render crashes в remote; API errors — через capture helper в MFE + host interceptor.
 
 ## Дополнительно
 

@@ -27,6 +27,9 @@ SENTRY_ENVIRONMENT
 |------|------------|
 | `src/sentry.ts` | `Sentry.init` + integrations |
 | `src/index.tsx` | import sentry до React |
+| `src/observability/sentry-filters.ts` | shared skip lists для interceptor + beforeSend |
+| `src/interceptors/error-response.interceptor.ts` | Sentry capture + Telegram; skip 401/403/404 |
+| `src/pages/*/ *-remote.page.tsx` | `Sentry.ErrorBoundary` per MFE |
 | `scripts/sentry-upload.sh` | upload source maps |
 | `.sentryclirc` | org `hyranse-go`, project `javascript-react` |
 | `.github/workflows/publish-image.yml` | build args + secrets |
@@ -59,6 +62,20 @@ MFE не инициализирует Sentry — проверка `Sentry.getCli
 `captureAiSearchError` пропускает status 401, 403, 404.
 
 Tags: `microfrontend: aiSearch`, `url`, `status`, `method`.
+
+## hyranse_cv_editor (MFE)
+
+| Файл | Назначение |
+|------|------------|
+| `frontend/src/observability/sentry.ts` | `captureCvEditorError` |
+| `frontend/src/api/cv.service.ts` | capture на failed requests |
+
+## Hyranse_public_api (MFE)
+
+| Файл | Назначение |
+|------|------------|
+| `frontend/src/observability/sentry.ts` | `captureApiPortalError` |
+| `frontend/src/api/public-api.service.ts` | capture на failed requests |
 
 ## Sentry projects map
 
@@ -124,8 +141,8 @@ Sentry.captureException(error, {
 |-----|---------------------|----------------|----------------------|
 | ai-search | `aiSearch` | `captureAiSearchError` | ✅ |
 | billing | `billing` | `captureBillingError` | ✅ |
-| cv-editor | `cvEditor` | 🔲 planned | 🔲 planned |
-| api-portal | `apiPortal` | 🔲 planned | 🔲 planned |
+| cv-editor | `cvEditor` | `captureCvEditorError` | ✅ |
+| api-portal | `apiPortal` | `captureApiPortalError` | ✅ |
 
 DSN — публичный client key, допустим в Helm values. `SENTRY_AUTH_TOKEN` — только GitHub Secrets (один token, org scope).
 
