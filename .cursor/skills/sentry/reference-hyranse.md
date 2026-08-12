@@ -71,12 +71,12 @@ Org: `hyranse-go` · Region: `https://de.sentry.io/`
 | `hyranse-billing-backend` | `hyranse_billing` backend | ✅ active | Helm values |
 | `hyranse-common-backend` | `common_backend` | ✅ active | Helm values |
 | `hyranse-parser` | `nodejs_parser_v2` (все workers/shards) | ✅ active | Helm values + tags `worker`, `shard` |
-| `hyranse-ai-search-backend` | `hyranse_ai_search_engine` backend | 🔲 planned | Helm values |
-| `hyranse-cv-editor-backend` | `hyranse_cv_editor` backend | 🔲 planned | Helm values |
-| `hyranse-public-api-backend` | `Hyranse_public_api` backend | 🔲 planned | Helm values |
-| `hyranse-email-service-backend` | `hyranse_email_service` backend | 🔲 planned | Helm values |
-| `hyranse-email-plugin-backend` | `Hyranse_email_plugin` backend | 🔲 planned | Helm values |
-| `hyranse-search-engine-backend` | `Hyranse_search_engine` | 🔲 planned | Helm values |
+| `hyranse-ai-search-backend` | `hyranse_ai_search_engine` backend | ✅ active | Helm values |
+| `hyranse-cv-editor-backend` | `hyranse_cv_editor` backend | ✅ active | Helm values |
+| `hyranse-public-api-backend` | `Hyranse_public_api` backend | ✅ active | Helm values |
+| `hyranse-email-service-backend` | `hyranse_email_service` backend | ✅ active | env `SENTRY_DSN` (no Helm yet) |
+| `hyranse-email-plugin-backend` | `Hyranse_email_plugin` backend | ✅ active | Helm values |
+| `hyranse-search-engine-backend` | `Hyranse_search_engine` | ✅ active | Helm values |
 
 ### Не создавать отдельные projects
 
