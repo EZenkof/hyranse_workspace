@@ -60,14 +60,74 @@ MFE не инициализирует Sentry — проверка `Sentry.getCli
 
 Tags: `microfrontend: aiSearch`, `url`, `status`, `method`.
 
-## Sentry projects (DSN)
+## Sentry projects map
 
-| Сервис | Project | DSN location |
-|--------|---------|--------------|
-| Backend | отдельный project | `values-stage.yaml`, `values-prod.yaml` |
-| Frontend | `javascript-react` | `publish-image.yml`, `.env.local` (local only) |
+Org: `hyranse-go` · Region: `https://de.sentry.io/`
 
-DSN — публичный client key, допустим в Helm values. `SENTRY_AUTH_TOKEN` — только secrets.
+| Sentry project | Repo / сервис | Статус | DSN / config location |
+|----------------|---------------|--------|------------------------|
+| `javascript-react` | `hyranse_frontend_main` + все MFE errors | ✅ active | `.sentryclirc`, `publish-image.yml` |
+| `hyranse-backend` | `hyranse_backend_main` | ✅ active | `deploy/chart/values-{stage,prod}.yaml` |
+| `hyranse-billing-backend` | `hyranse_billing` backend | 🔲 planned | Helm values |
+| `hyranse-common-backend` | `common_backend` | 🔲 planned | Helm values |
+| `hyranse-parser` | `nodejs_parser_v2` (все workers/shards) | 🔲 planned | Helm values + tags `worker`, `shard` |
+| `hyranse-ai-search-backend` | `hyranse_ai_search_engine` backend | 🔲 planned | Helm values |
+| `hyranse-cv-editor-backend` | `hyranse_cv_editor` backend | 🔲 planned | Helm values |
+| `hyranse-public-api-backend` | `Hyranse_public_api` backend | 🔲 planned | Helm values |
+| `hyranse-email-service-backend` | `hyranse_email_service` backend | 🔲 planned | Helm values |
+| `hyranse-email-plugin-backend` | `Hyranse_email_plugin` backend | 🔲 planned | Helm values |
+| `hyranse-search-engine-backend` | `Hyranse_search_engine` | 🔲 planned | Helm values |
+
+### Не создавать отдельные projects
+
+| Что | Почему | Альтернатива |
+|-----|--------|--------------|
+| Parser shard (`hyranse-parser-public-profile-0`, …) | один codebase, 10+ deployments | `hyranse-parser` + `tags.worker`, `tags.shard` |
+| stage / production | дублирование projects | `SENTRY_ENVIRONMENT` / `REACT_APP_SENTRY_ENVIRONMENT` |
+| MFE (`billing`, `aiSearch`, `cvEditor`, `apiPortal`) | init только в host | `javascript-react` + `tags.microfrontend` |
+| `hyranse_ui_kit`, `hyranse_wiki` | нет runtime | — |
+
+### Naming convention
+
+```
+hyranse-<service>-backend     # NestJS/Node backend
+javascript-react              # host frontend (+ MFE errors via tags)
+```
+
+`<service>` = короткое имя из repo/chart: `billing`, `parser`, `common`, `ai-search`, `cv-editor`, `public-api`, `email-service`, `email-plugin`, `search-engine`.
+
+### Per-project alert defaults
+
+| Project | Priority | `tracesSampleRate` (prod) | Alert |
+|---------|----------|---------------------------|-------|
+| `hyranse-billing-backend` | critical | `0.1` | new issue in production |
+| `hyranse-parser` | high volume | `0.05` | error rate spike per `worker` tag |
+| `hyranse-common-backend` | high | `0.1` | new issue in production |
+| остальные backends | normal | `0.1` | new issue in production |
+| `javascript-react` | normal | `0.1` | new issue in production |
+
+### Parser worker tags (пример)
+
+```typescript
+Sentry.captureException(error, {
+  tags: {
+    worker: process.env.WORKER_NAME,
+    shard: process.env.SHARD_INDEX,
+    deployment: process.env.DEPLOYMENT_NAME,
+  },
+});
+```
+
+### MFE microfrontend tags
+
+| MFE | tag `microfrontend` | capture helper | ErrorBoundary on host |
+|-----|---------------------|----------------|----------------------|
+| ai-search | `aiSearch` | `captureAiSearchError` | ✅ |
+| billing | `billing` | `captureBillingError` | ✅ |
+| cv-editor | `cvEditor` | 🔲 planned | 🔲 planned |
+| api-portal | `apiPortal` | 🔲 planned | 🔲 planned |
+
+DSN — публичный client key, допустим в Helm values. `SENTRY_AUTH_TOKEN` — только GitHub Secrets (один token, org scope).
 
 ## Frontend init highlights (`sentry.ts`)
 

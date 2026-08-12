@@ -21,7 +21,34 @@ disable-model-invocation: true
 | `hyranse_frontend_main` | `@sentry/react` | `src/sentry.ts` | `REACT_APP_SENTRY_*`, `SENTRY_AUTH_TOKEN` (CI only) |
 | `hyranse_ai_search_engine` (MFE) | `@sentry/react` | host app init | capture через `captureAiSearchError` |
 
-Один Sentry project = один deployable artifact. Backend и frontend — разные DSN/projects.
+Backend и frontend — разные DSN/projects. Карта projects: [reference-hyranse.md](reference-hyranse.md#sentry-projects-map).
+
+## Sentry projects — правила
+
+**Отдельный Sentry project** — для каждого deployable backend (свой Helm chart / Argo Application / lifecycle).
+
+**Не отдельный project:**
+
+| Случай | Решение |
+|--------|---------|
+| Parser shards (`public-profile-0`, `photo-1`, …) | один `hyranse-parser`, tags: `worker`, `shard`, `deployment` |
+| stage + prod | один project, разные `environment` |
+| MFE (billing, ai-search, cv-editor, …) | host project `javascript-react` + tag `microfrontend` |
+| UI kit, wiki | не нужен — нет runtime |
+
+**Правило:** `отдельный Sentry project ↔ отдельный backend repo/chart`, но не «один project на pod».
+
+**Зачем отдельные backend projects:**
+
+- alerts без кросс-шума (parser spike не алертит billing)
+- разные `ignoreErrors` / `beforeSend` per service
+- разный sampling (parser high volume → `0.05`, billing → `0.1`)
+- event quotas не съедаются одним шумным сервисом
+- ownership: issue в project = конкретный сервис
+
+**Не делать** один mega `hyranse-backends` + tag `service` — parser засыпает billing issues, alerts бесполезны.
+
+**Auth:** один `SENTRY_AUTH_TOKEN` в GitHub Secrets (org scope), разные `project` в `.sentryclirc` / CLI per repo.
 
 ## Принципы
 
@@ -84,7 +111,8 @@ build → sentry-cli releases new → inject → upload → finalize → deploys
 
 ## Новый сервис — чеклист
 
-- [ ] Выбрать/создать Sentry project (отдельный DSN)
+- [ ] Создать Sentry project по naming: `hyranse-<service>-backend` (см. карту в reference-hyranse.md)
+- [ ] Не создавать project на shard/stage/MFE
 - [ ] Init SDK с `environment` и conditional `enabled`
 - [ ] `tracesSampleRate: 0.1` для prod/stage
 - [ ] `beforeSend` / `ignoreErrors` для expected errors
@@ -122,6 +150,10 @@ npx sentry-cli releases list --org hyranse-go
 | Auth token в repo | GitHub Secrets |
 | Resolve issue без фикса | fix → deploy |
 | `captureMessage(JSON.stringify(user))` | никогда — PII |
+| Project на parser shard | один `hyranse-parser` + tags |
+| Project на stage/prod | `environment`, не project |
+| Project на каждый MFE | tag `microfrontend` в `javascript-react` |
+| Один mega backend project | отдельный project per deployable backend |
 
 ## Дополнительно
 

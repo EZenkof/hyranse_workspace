@@ -72,6 +72,15 @@ npx sentry-cli releases info <sha> --org hyranse-go
 
 `.sentryclirc` в frontend: `url=https://de.sentry.io/`, `org=hyranse-go`, `project=javascript-react`.
 
+Для backend issues — CLI с project из [reference-hyranse.md](reference-hyranse.md#sentry-projects-map):
+
+```bash
+npx sentry-cli issues list --org hyranse-go --project hyranse-billing-backend
+npx sentry-cli issues list --org hyranse-go --project hyranse-parser
+```
+
+Parser: фильтровать в UI по tag `worker` / `shard`, не по отдельным projects.
+
 ## Типичные паттерны Hyranse
 
 | Симптом | Вероятная причина | Где смотреть |
