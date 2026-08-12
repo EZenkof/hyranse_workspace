@@ -69,7 +69,7 @@ Org: `hyranse-go` · Region: `https://de.sentry.io/`
 | `javascript-react` | `hyranse_frontend_main` + все MFE errors | ✅ active | `.sentryclirc`, `publish-image.yml` |
 | `hyranse-backend` | `hyranse_backend_main` | ✅ active | `deploy/chart/values-{stage,prod}.yaml` |
 | `hyranse-billing-backend` | `hyranse_billing` backend | ✅ active | Helm values |
-| `hyranse-common-backend` | `common_backend` | 🔲 planned | Helm values |
+| `hyranse-common-backend` | `common_backend` | ✅ active | Helm values |
 | `hyranse-parser` | `nodejs_parser_v2` (все workers/shards) | 🔲 planned | Helm values + tags `worker`, `shard` |
 | `hyranse-ai-search-backend` | `hyranse_ai_search_engine` backend | 🔲 planned | Helm values |
 | `hyranse-cv-editor-backend` | `hyranse_cv_editor` backend | 🔲 planned | Helm values |
